@@ -19,27 +19,21 @@
 #define OBSERVER_ID 1 
 
 
-void sendLog(int whoType, int whoId, int isSuccsesed, int size) {
-    int data = generateLogData(whoType, whoId, isSuccsesed, size);
-    MPI_Send(&data, 1, MPI_INT, OBSERVER_ID, MSG_LOGGING, MPI_COMM_WORLD);
-}
+#define PRODUCER_TYPE 0
+#define CONSUMER_TYPE 1
 
 
-int generateLogData(int whoType, int whoId, int isSuccsesed, int size){
-    return (whoId) + (whoType) * 2 + (isSuccsesed) * size * 2;
-}
+struct logNote{
+    int isSuccseed;
+    int type;
+    int id;
+    int bufferSize;
+    int bufferUsage;
+};
 
-
-std::string parseLogData(int data, int size){
-    int whoId = data % 2;
-    int whoType = (int)(data / 2) % size;
-    int isSuccsesed = data % (2 * size);
-    std::string note = "";
-    note += ((bool) !whoType ? "Производитель " : "Потребитель ");
-    note += "с номером процесса" + std::to_string(whoId) + " ";
-    note += ((bool) !isSuccsesed ? "успешно " : "неудачно ");
-    note += ((bool) !whoType ? "записал в буффер" : "прочёл буффер");
-    return note;
+void sendLog(int isSuccseed, int type, int id, int bufferSize, int bufferUsage) {
+    logNote data = {isSuccseed, type, id, bufferSize, bufferUsage};
+    MPI_Send(&data, 5, MPI_INT, OBSERVER_ID, MSG_LOGGING, MPI_COMM_WORLD);
 }
 
 
@@ -49,17 +43,18 @@ void getData(std::queue<int>& storage, int& data, MPI_Status& status, int source
     MPI_Recv(&data, 1, MPI_INT, source, MSG_PRODUCER_SEND, MPI_COMM_WORLD, &status);
     storage.push(data);
     
-    sendLog(0, source, 0, size);
+    sendLog(0, PRODUCER_TYPE, source, size, storage.size());
 }
+
 
 void sendData(std::queue<int>& storage, int dest, int size){
     MPI_Send(&storage.front(), 1, MPI_INT, dest, MSG_SERVER_HELLO, MPI_COMM_WORLD);                
     storage.pop();
 
-    sendLog(1, dest, 0, size);
+    sendLog(0, CONSUMER_TYPE, dest, size, storage.size());
 }
 
-void server(int storageSize, int size) {
+void server(int storageSize) {
         std::queue<int> storage;
         std::queue<int> producers;
         std::queue<int> consumers;
@@ -68,12 +63,12 @@ void server(int storageSize, int size) {
 
         while (true){
             while (!consumers.empty() && !storage.empty()) {
-                sendData(storage, consumers.front(), size);
+                sendData(storage, consumers.front(), storageSize);
                 consumers.pop();
             }
 
             while (!producers.empty() && storage.size() < storageSize) {
-                getData(storage, data, status, producers.front(), size);
+                getData(storage, data, status, producers.front(), storageSize);
                 producers.pop();
             }
 
@@ -86,37 +81,77 @@ void server(int storageSize, int size) {
 
             if (status.MPI_SOURCE == SERVER_ID) {continue;}
             if (status.MPI_SOURCE == OBSERVER_ID) {continue;}
+
             if (status.MPI_TAG == MSG_PRODUCER_HELLO) {
                 source = status.MPI_SOURCE;
-                if (storage.size() == storageSize) {producers.push(source); continue;};
-                getData(storage, data, status, source, size);
+                if (storage.size() == storageSize) {
+                    producers.push(source); 
+                    sendLog(1, PRODUCER_TYPE, source, storageSize, storage.size());
+                    continue;
+                };
+
+                getData(storage, data, status, source, storageSize);
                 continue;
             }
+
             if (status.MPI_TAG == MSG_CONSUMER_HELLO) {
-                if (storage.empty()) {consumers.push(status.MPI_SOURCE); continue;}
-                sendData(storage, status.MPI_SOURCE, size);
+                if (storage.empty()) {
+                    consumers.push(status.MPI_SOURCE); 
+                    sendLog(1, CONSUMER_TYPE, status.MPI_SOURCE, storageSize, storage.size());
+                    continue;
+                };
+
+                sendData(storage, status.MPI_SOURCE, storageSize);
                 continue;
             }
         };
 }
 
 void observer(int size) {
-    
+    logNote note;
+
+    std::cout << "===== Протокол работы (буфер " << size << " элементов) =====\n";
+
+    while (true) {
+        MPI_Recv(&note, 5, MPI_INT, MPI_ANY_SOURCE, MSG_LOGGING, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        std::string who = (note.type == PRODUCER_TYPE) ? "Производитель" : "Потребитель";
+        std::string action;
+        if (note.type == PRODUCER_TYPE) {
+            action = note.isSuccseed ? "не смог записать в буфер"
+                                     : "успешно записал в буфер";
+        } else {
+            action = note.isSuccseed ? "не смог прочесть буфер"
+                                     : "успешно прочёл из буфера";
+        }
+
+        std::cout << who << " " << note.id << " "
+                  << action << " (заполнено " << note.bufferUsage
+                  << "/" << note.bufferSize << ")" << std::endl;
+    }
 }
 
 void producer(int id) {
     int waitTime; //TODO задать максимальное время ожидания ответа от сервера
+    char zero = 0;
     while (true){
-        int workTime; // TODO задать случайное значение
+        int workTime = rand() % 3 + 1;
         std::this_thread::sleep_for(std::chrono::seconds(workTime));
-        int value; // TODO задать случайное значение
+        MPI_Send(&id, 1, MPI_INT, SERVER_ID, MSG_PRODUCER_HELLO, MPI_COMM_WORLD);
+        MPI_Recv(&zero, 1, MPI_CHAR, SERVER_ID, MSG_SERVER_HELLO, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&id, 1, MPI_INT, SERVER_ID, MSG_PRODUCER_SEND, MPI_COMM_WORLD);
     }
-    
 }
 
 void consumer(int id) {
-    int waitTime; // задать максимальное время ожидания ответа от сервера
-    int worktime; // задать рандомное определение
+    char zero = 0;
+    int data = 0;
+    while (true){
+        int workTime = rand() % 3 + 1;
+        MPI_Send(&id, 1, MPI_INT, SERVER_ID, MSG_CONSUMER_HELLO, MPI_COMM_WORLD);
+        MPI_Recv(&data, 1, MPI_INT, SERVER_ID, MSG_SERVER_HELLO, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        std::this_thread::sleep_for(std::chrono::seconds(workTime));
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -129,12 +164,12 @@ int main(int argc, char *argv[]) {
     int manufactorCount = 3;
 
     int consumerCount = size - 2 - manufactorCount;
-
-    if (rank == 0) {
-        server(storageSize, size);
-    } else if (rank == 1) {
-        observer(size);
-    } else if (rank < 2 + manufactorCount) {       
+    srand(time(NULL) + rank);
+    if (rank == SERVER_ID) {
+        server(storageSize);
+    } else if (rank == OBSERVER_ID) {
+        observer(storageSize);
+    } else if (rank < manufactorCount + 2) {       
         producer(rank);
     } else {
         consumer(rank);
