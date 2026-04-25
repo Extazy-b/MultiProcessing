@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <mpi.h>
+
 int isPrime(int n) {
     if (n < 2) return 0;
     for (int i = 2; i <= sqrt(n); i++)
