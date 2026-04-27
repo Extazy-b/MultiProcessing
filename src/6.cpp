@@ -1,6 +1,5 @@
 #include <cstdio>
 #include <cstdlib>
-#include <cmath>
 #include <string>
 #include <queue>
 #include <chrono>
