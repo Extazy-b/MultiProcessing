@@ -16,6 +16,7 @@
 #define WRITING_DATA_STOP 4
 #define SERVER_DATA 5
 #define SERVER_DATA_STOP 6
+#define MSG_LOGGING 7
 
 #define DATA_TYPE MPI_INT
 #define DATA_SIZE 1
@@ -29,7 +30,11 @@
 int signalZero = 0;
 int tmpData = 0;
 
-#define MSG_LOGGING 7
+
+void mySleep() {
+    std::this_thread::sleep_for(std::chrono::seconds(rand() % 5));
+}
+
 
 struct LogNote {
     int eventType; 
@@ -81,11 +86,8 @@ void observer() {
     }
 }
 
-void mySleep() {
-    std::this_thread::sleep_for(std::chrono::seconds(rand() % 10));
-}
-
 void server() {
+
     ISLL storage = ISLL();
     CSLL activeReaders = CSLL();
 
@@ -163,10 +165,13 @@ void server() {
 }
 
 void writer() {
-    int buffer_size = rand() % 100;    
+    int buffer_size = 100;    
     std::queue<int> buffer = std::queue<int>();
+    for (size_t i = 0; i < buffer_size; i++) buffer.push(rand());
+    
     bool session = false;
     while (true) {
+        mySleep();
         if (session) {
             if (!buffer.empty()){
             MPI_Send(&buffer.front(), DATA_SIZE, DATA_TYPE, SERVER_ID, WRITING_DATA, MPI_COMM_WORLD);
@@ -174,7 +179,7 @@ void writer() {
             }
             else {
             MPI_Send(&signalZero, 1, MPI_INT, SERVER_ID, WRITING_DATA_STOP, MPI_COMM_WORLD);
-            buffer_size = rand() % 100;
+            buffer_size = rand() % 10;
             session = !session;
             }
         }
@@ -197,6 +202,7 @@ void reader() {
     bool session = false;
 
     while (true) {
+        mySleep();
         if (session) {
             MPI_Recv(&tmpData, DATA_SIZE, DATA_TYPE, SERVER_ID, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
             if (status.MPI_TAG == SERVER_DATA) {data.push(tmpData); continue;}
@@ -222,9 +228,9 @@ int main(int argc, char *argv[]) {
     } else if (rank == OBSERVER_ID) {
         observer();
     } else if (rank < readerCount + 2) {       
-        writer();
-    } else {
         reader();
+    } else {
+        writer();
     }
 
     MPI_Finalize();
