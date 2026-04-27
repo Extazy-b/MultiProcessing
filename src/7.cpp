@@ -98,6 +98,7 @@ void server() {
     int session = -1;
 
     while (true){
+        mySleep();
         if (!activeReaders.empty()) {
             if (activeReaders.current()->current == storage.end()){
                 sendLog(4, activeReaders.current()->rank, 0, storage.size());
@@ -202,7 +203,6 @@ void reader() {
     bool session = false;
 
     while (true) {
-        mySleep();
         if (session) {
             MPI_Recv(&tmpData, DATA_SIZE, DATA_TYPE, SERVER_ID, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
             if (status.MPI_TAG == SERVER_DATA) {data.push(tmpData); continue;}
