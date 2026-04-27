@@ -32,7 +32,7 @@ int tmpData = 0;
 
 
 void mySleep() {
-    std::this_thread::sleep_for(std::chrono::seconds(rand() % 5));
+    std::this_thread::sleep_for(std::chrono::seconds(rand() % 3));
 }
 
 
@@ -166,13 +166,12 @@ void server() {
 }
 
 void writer() {
-    int buffer_size = 100;    
+    int buffer_size = 10;    
     std::queue<int> buffer = std::queue<int>();
     for (size_t i = 0; i < buffer_size; i++) buffer.push(rand());
     
     bool session = false;
     while (true) {
-        mySleep();
         if (session) {
             if (!buffer.empty()){
             MPI_Send(&buffer.front(), DATA_SIZE, DATA_TYPE, SERVER_ID, WRITING_DATA, MPI_COMM_WORLD);
