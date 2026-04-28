@@ -98,7 +98,7 @@ void server() {
     int session = -1;
 
     while (true){
-        mySleep();
+        // mySleep();
         if (!activeReaders.empty()) {
             if (activeReaders.current()->current == storage.end()){
                 sendLog(4, activeReaders.current()->rank, 0, storage.size());
